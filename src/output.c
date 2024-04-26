@@ -1,5 +1,10 @@
 #include <ankkanen-wl.h>
 #include <output.h>
+#include <layer-shell-v1.h>
+
+void output_update_usable_area(struct ankkanen_wl_output *output) {
+	layers_arrange(output);
+}
 
 static void output_frame(struct wl_listener *listener, void *data)
 {

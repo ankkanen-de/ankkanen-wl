@@ -16,6 +16,7 @@ struct ankkanen_wl_output {
 	struct wl_listener destroy;
 };
 
+void output_update_usable_area(struct ankkanen_wl_output *output);
 void server_new_output(struct wl_listener *listener, void *data);
 
 #endif //_OUTPUT_H

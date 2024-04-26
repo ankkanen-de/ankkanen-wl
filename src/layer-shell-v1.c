@@ -2,7 +2,31 @@
 #include <layer-shell-v1.h>
 #include <output.h>
 
-static void layer_surface_do_configure(struct ankkanen_wl_layer *layer)
+void layers_arrange(struct ankkanen_wl_output *output) {
+	struct ankkanen_wl_server *server = output->server;
+
+	output->usable_area = output->full_area;
+
+	struct ankkanen_wl_layer *l;
+	wl_list_for_each(l, &server->layers, link)
+	{
+		if (l->surface->current.exclusive_zone > 0)
+			wlr_scene_layer_surface_v1_configure(
+				l->scene_tree,
+				&output->full_area,
+				&output->usable_area);
+	}
+	wl_list_for_each(l, &server->layers, link)
+	{
+		if (l->surface->current.exclusive_zone <= 0)
+			wlr_scene_layer_surface_v1_configure(
+				l->scene_tree,
+				&output->full_area,
+				&output->usable_area);
+	}
+} 
+
+static void layer_surface_do_position(struct ankkanen_wl_layer *layer)
 {
 	struct wlr_layer_surface_v1 *layer_surface = layer->surface;
 	struct ankkanen_wl_server *server = layer->server;
@@ -32,22 +56,6 @@ static void layer_surface_do_configure(struct ankkanen_wl_layer *layer)
 		y = (area.height - layer_surface->current.desired_height) / 2;
 	}
 
-	server->primary_output->usable_area = server->primary_output->full_area;
-
-	struct ankkanen_wl_layer *l;
-	wl_list_for_each(l, &server->layers, link)
-	{
-		if (l != layer)
-			wlr_scene_layer_surface_v1_configure(
-				l->scene_tree,
-				&server->primary_output->full_area,
-				&server->primary_output->usable_area);
-	}
-
-	wlr_scene_layer_surface_v1_configure(
-		layer->scene_tree, &server->primary_output->full_area,
-		&server->primary_output->usable_area);
-
 	wlr_scene_node_set_position(&layer->scene_tree->tree->node, x, y);
 }
 
@@ -70,7 +78,12 @@ static void layer_surface_commit(struct wl_listener *listener, void *data)
 {
 	struct ankkanen_wl_layer *layer =
 		wl_container_of(listener, layer, commit);
-	layer_surface_do_configure(layer);
+	uint32_t committed = layer->surface->current.committed;
+	if (committed || layer->mapped != layer->surface->surface->mapped) {
+		layer->mapped = layer->surface->surface->mapped;
+		output_update_usable_area(layer->server->primary_output);
+		layer_surface_do_position(layer);
+	}
 }
 
 static void layer_surface_destroy(struct wl_listener *listener, void *data)
@@ -112,5 +125,7 @@ void server_new_layer_surface(struct wl_listener *listener, void *data)
 	layer->destroy.notify = layer_surface_destroy;
 	wl_signal_add(&layer_surface->events.destroy, &layer->destroy);
 
-	layer_surface_do_configure(layer);
+	wlr_scene_layer_surface_v1_configure(
+		layer->scene_tree, &server->primary_output->full_area,
+		&server->primary_output->usable_area);
 }
