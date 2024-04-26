@@ -3,6 +3,7 @@
 #include <xdg-shell.h>
 
 #include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/util/log.h>
 
 struct ankkanen_wl_output *
@@ -79,7 +80,12 @@ void focus_toplevel(struct ankkanen_wl_toplevel *toplevel,
 		struct wlr_xdg_toplevel *prev_toplevel =
 			wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
 		if (prev_toplevel != NULL) {
+			struct wlr_scene_tree *prev_tree =
+				prev_toplevel->base->data;
+			struct ankkanen_wl_node *prev_tl = prev_tree->node.data;
 			wlr_xdg_toplevel_set_activated(prev_toplevel, false);
+			wlr_foreign_toplevel_handle_v1_set_activated(
+				prev_tl->toplevel->foreign_handle, false);
 		}
 	}
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
@@ -87,6 +93,8 @@ void focus_toplevel(struct ankkanen_wl_toplevel *toplevel,
 	wl_list_remove(&toplevel->link);
 	wl_list_insert(&server->toplevels, &toplevel->link);
 	wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
+	wlr_foreign_toplevel_handle_v1_set_activated(toplevel->foreign_handle,
+						     true);
 
 	if (keyboard != NULL) {
 		wlr_seat_keyboard_notify_enter(
@@ -130,6 +138,8 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data)
 	wl_list_remove(&toplevel->request_resize.link);
 	wl_list_remove(&toplevel->request_maximize.link);
 	wl_list_remove(&toplevel->request_fullscreen.link);
+
+	wlr_foreign_toplevel_handle_v1_destroy(toplevel->foreign_handle);
 
 	free(toplevel->node);
 	free(toplevel);
@@ -201,6 +211,22 @@ void xdg_toplevel_do_unmaximize(struct ankkanen_wl_toplevel *toplevel)
 				    toplevel->restore_box.y);
 }
 
+void xdg_toplevel_do_minimize(struct ankkanen_wl_toplevel *toplevel)
+{
+	wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, false);
+	wlr_foreign_toplevel_handle_v1_set_activated(toplevel->foreign_handle,
+						     false);
+	if (toplevel->server->seat->keyboard_state.focused_surface ==
+	    toplevel->xdg_toplevel->base->surface)
+		wlr_seat_keyboard_clear_focus(toplevel->server->seat);
+	wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+}
+
+void xdg_toplevel_do_unminimize(struct ankkanen_wl_toplevel *toplevel)
+{
+	wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
+}
+
 static void xdg_toplevel_request_move(struct wl_listener *listener, void *data)
 {
 	struct ankkanen_wl_toplevel *toplevel =
@@ -251,6 +277,59 @@ static void xdg_toplevel_request_fullscreen(struct wl_listener *listener,
 	wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
 }
 
+static void foreign_request_maximize(struct wl_listener *listener, void *data)
+{
+	struct ankkanen_wl_toplevel *toplevel =
+		wl_container_of(listener, toplevel, foreign_request_maximize);
+
+	if (!toplevel->xdg_toplevel->current.maximized) {
+		if (!toplevel->xdg_toplevel->current.fullscreen)
+			xdg_toplevel_do_maximize(toplevel);
+		wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, true);
+	}
+	wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+}
+
+static void foreign_request_minimize(struct wl_listener *listener, void *data)
+{
+	struct ankkanen_wl_toplevel *toplevel =
+		wl_container_of(listener, toplevel, foreign_request_minimize);
+
+	xdg_toplevel_do_minimize(toplevel);
+	wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+}
+
+static void foreign_request_activate(struct wl_listener *listener, void *data)
+{
+	struct ankkanen_wl_toplevel *toplevel =
+		wl_container_of(listener, toplevel, foreign_request_activate);
+
+	xdg_toplevel_do_unminimize(toplevel);
+	focus_toplevel(toplevel, toplevel->xdg_toplevel->base->surface);
+	wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+}
+
+static void foreign_request_fullscreen(struct wl_listener *listener, void *data)
+{
+	struct ankkanen_wl_toplevel *toplevel =
+		wl_container_of(listener, toplevel, foreign_request_fullscreen);
+
+	if (!toplevel->xdg_toplevel->current.fullscreen) {
+		if (!toplevel->xdg_toplevel->current.maximized)
+			xdg_toplevel_do_maximize(toplevel);
+		wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
+	}
+	wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+}
+
+static void foreign_request_close(struct wl_listener *listener, void *data)
+{
+	struct ankkanen_wl_toplevel *toplevel =
+		wl_container_of(listener, toplevel, foreign_request_close);
+
+	wlr_xdg_toplevel_send_close(toplevel->xdg_toplevel);
+}
+
 void server_new_xdg_surface(struct wl_listener *listener, void *data)
 {
 	struct ankkanen_wl_server *server =
@@ -277,6 +356,38 @@ void server_new_xdg_surface(struct wl_listener *listener, void *data)
 		toplevel->server->toplevel_tree, toplevel->xdg_toplevel->base);
 	toplevel->scene_tree->node.data = node;
 	toplevel->node = node;
+
+	toplevel->foreign_handle = wlr_foreign_toplevel_handle_v1_create(
+		server->foreign_toplevel_manager_v1);
+	wlr_foreign_toplevel_handle_v1_set_app_id(
+		toplevel->foreign_handle, toplevel->xdg_toplevel->app_id);
+	wlr_foreign_toplevel_handle_v1_set_title(toplevel->foreign_handle,
+						 toplevel->xdg_toplevel->title);
+	struct wlr_scene_node *parent_node =
+		&toplevel->scene_tree->node.parent->node;
+	struct ankkanen_wl_node *parent_tl = parent_node->data;
+	if (parent_tl)
+		wlr_foreign_toplevel_handle_v1_set_parent(
+			toplevel->foreign_handle,
+			parent_tl->toplevel->foreign_handle);
+
+	toplevel->foreign_request_maximize.notify = foreign_request_maximize;
+	wl_signal_add(&toplevel->foreign_handle->events.request_maximize,
+		      &toplevel->foreign_request_maximize);
+	toplevel->foreign_request_minimize.notify = foreign_request_minimize;
+	wl_signal_add(&toplevel->foreign_handle->events.request_minimize,
+		      &toplevel->foreign_request_minimize);
+	toplevel->foreign_request_activate.notify = foreign_request_activate;
+	wl_signal_add(&toplevel->foreign_handle->events.request_activate,
+		      &toplevel->foreign_request_activate);
+	toplevel->foreign_request_fullscreen.notify =
+		foreign_request_fullscreen;
+	wl_signal_add(&toplevel->foreign_handle->events.request_fullscreen,
+		      &toplevel->foreign_request_fullscreen);
+	toplevel->foreign_request_close.notify = foreign_request_close;
+	wl_signal_add(&toplevel->foreign_handle->events.request_close,
+		      &toplevel->foreign_request_close);
+
 	xdg_surface->data = toplevel->scene_tree;
 	node->toplevel = toplevel;
 

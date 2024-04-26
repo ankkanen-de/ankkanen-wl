@@ -9,7 +9,9 @@ struct ankkanen_wl_toplevel {
 	struct ankkanen_wl_server *server;
 	struct wlr_xdg_toplevel *xdg_toplevel;
 	struct wlr_scene_tree *scene_tree;
+	struct wlr_foreign_toplevel_handle_v1 *foreign_handle;
 	struct wlr_box restore_box;
+
 	struct wl_listener map;
 	struct wl_listener unmap;
 	struct wl_listener destroy;
@@ -17,6 +19,12 @@ struct ankkanen_wl_toplevel {
 	struct wl_listener request_resize;
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
+
+	struct wl_listener foreign_request_maximize;
+	struct wl_listener foreign_request_minimize;
+	struct wl_listener foreign_request_activate;
+	struct wl_listener foreign_request_fullscreen;
+	struct wl_listener foreign_request_close;
 };
 
 struct ankkanen_wl_toplevel *

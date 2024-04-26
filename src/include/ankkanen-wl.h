@@ -25,6 +25,7 @@ struct ankkanen_wl_server {
 	struct wlr_scene_tree *overlay_tree;
 	struct wlr_scene_tree *toplevel_tree;
 
+	struct wlr_foreign_toplevel_manager_v1 *foreign_toplevel_manager_v1;
 	struct wlr_xdg_shell *xdg_shell;
 	struct wlr_layer_shell_v1 *layer_shell_v1;
 	struct wl_listener new_xdg_surface;

@@ -10,6 +10,7 @@
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/util/log.h>
 
@@ -67,6 +68,8 @@ int main(int argc, char *argv[])
 	server.new_output.notify = server_new_output;
 	wl_signal_add(&server.backend->events.new_output, &server.new_output);
 
+	server.foreign_toplevel_manager_v1 =
+		wlr_foreign_toplevel_manager_v1_create(server.wl_display);
 	server.scene = wlr_scene_create();
 	server.scene_layout = wlr_scene_attach_output_layout(
 		server.scene, server.output_layout);
