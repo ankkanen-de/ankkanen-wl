@@ -17,6 +17,7 @@ struct ankkanen_wl_toplevel {
 	struct wl_listener destroy;
 	struct wl_listener request_move;
 	struct wl_listener request_resize;
+	struct wl_listener request_minimize;
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
 

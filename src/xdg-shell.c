@@ -243,6 +243,16 @@ static void xdg_toplevel_request_resize(struct wl_listener *listener,
 	begin_interactive(toplevel, ANKKANEN_WL_CURSOR_RESIZE, event->edges);
 }
 
+static void xdg_toplevel_request_minimize(struct wl_listener *listener,
+					  void *data)
+{
+	struct ankkanen_wl_toplevel *toplevel =
+		wl_container_of(listener, toplevel, request_minimize);
+
+	xdg_toplevel_do_minimize(toplevel);
+	wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+}
+
 static void xdg_toplevel_request_maximize(struct wl_listener *listener,
 					  void *data)
 {
@@ -405,6 +415,9 @@ void server_new_xdg_surface(struct wl_listener *listener, void *data)
 	toplevel->request_resize.notify = xdg_toplevel_request_resize;
 	wl_signal_add(&xdg_toplevel->events.request_resize,
 		      &toplevel->request_resize);
+	toplevel->request_minimize.notify = xdg_toplevel_request_minimize;
+	wl_signal_add(&xdg_toplevel->events.request_minimize,
+		      &toplevel->request_minimize);
 	toplevel->request_maximize.notify = xdg_toplevel_request_maximize;
 	wl_signal_add(&xdg_toplevel->events.request_maximize,
 		      &toplevel->request_maximize);
